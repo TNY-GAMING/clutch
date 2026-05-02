@@ -1,0 +1,62 @@
+buildscript {
+    repositories {
+        mavenCentral()
+        maven { url = "https://maven.minecraftforge.net" }
+        maven { url = "https://repo.spongepowered.org/maven" }
+        jcenter()
+    }
+    dependencies {
+        classpath 'net.minecraftforge.gradle:ForgeGradle:2.1-SNAPSHOT'
+    }
+}
+
+apply plugin: 'java'
+apply plugin: 'net.minecraftforge.gradle.forge'
+
+version      = "1.0.0"
+group        = "com.clutchmod"
+archivesBaseName = "ClutchMod"
+
+sourceCompatibility = JavaVersion.VERSION_1_8
+targetCompatibility = JavaVersion.VERSION_1_8
+compileJava.options.encoding = "UTF-8"
+
+minecraft {
+    version  = "1.8.9-11.15.1.2318-1.8.9"
+    runDir   = "run"
+    mappings = "stable_22"
+}
+
+repositories {
+    maven { url = "https://repo.spongepowered.org/maven" }
+}
+
+dependencies {
+    compile 'org.spongepowered:mixin:0.7.11-SNAPSHOT'
+}
+
+sourceSets.main.java.srcDirs += 'src/main/java'
+
+processResources {
+    inputs.property "version",      project.version
+    inputs.property "mcversion",    project.minecraft.version
+
+    from(sourceSets.main.resources.srcDirs) {
+        include 'mcmod.info'
+        expand 'version': project.version, 'mcversion': project.minecraft.version
+    }
+    from(sourceSets.main.resources.srcDirs) {
+        exclude 'mcmod.info'
+    }
+}
+
+jar {
+    manifest {
+        attributes(
+            'FMLCorePlugin':            'com.clutchmod.mixins.ClutchCoreMod',
+            'FMLCorePluginContainsFMLMod': 'true',
+            'MixinConfigs':             'mixins.clutchmod.json',
+            'TweakClass':               'org.spongepowered.asm.launch.MixinTweaker'
+        )
+    }
+}

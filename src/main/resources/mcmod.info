@@ -1,0 +1,13 @@
+[
+  {
+    "modid":       "clutchmod",
+    "name":        "ClutchMod",
+    "description": "Advanced utility mod — Clutch & Silent Aim for 1.8.9",
+    "version":     "1.0.0",
+    "mcversion":   "1.8.9",
+    "url":         "",
+    "authorList":  ["Evan TNY"],
+    "credits":     "Evan",
+    "logoFile":    "assets/clutchmod/logo.png"
+  }
+]

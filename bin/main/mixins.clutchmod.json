@@ -1,0 +1,16 @@
+{
+  "required":           true,
+  "minVersion":         "0.7.10",
+  "package":            "com.clutchmod.mixins",
+  "compatibilityLevel": "JAVA_8",
+  "mixins": [
+    "MixinNetHandlerPlayClient",
+    "MixinFastPlace",
+    "MixinPlayerControllerMP",
+    "MixinEntityPlayerSP",
+    "MixinMinecraft"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

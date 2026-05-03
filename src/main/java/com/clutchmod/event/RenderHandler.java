@@ -1,6 +1,6 @@
 package com.clutchmod.event;
 
-import com.clutchmod.ClutchMod;
+import com.clutchmod.ModState;
 import com.clutchmod.modules.movement.ClutchModule;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
@@ -42,26 +42,26 @@ public class RenderHandler {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.thePlayer == null) return;
 
-        // ─── Null guard on ClutchMod.CLUTCH ──────────────────────────────────
-        // BUG FIX: if ClutchMod.init() failed (e.g. @Mod annotation broken),
+        // ─── Null guard on ModState.CLUTCH ─────────────────────────────────────
+        // If ModState.initModules() failed (e.g. exception in constructor),
         // CLUTCH can be null. The original code called clutch.isEnabled()
         // unconditionally, causing NPE and crash-to-desktop.
-        ClutchModule clutch = ClutchMod.CLUTCH;
+        ClutchModule clutch = ModState.CLUTCH;
         if (clutch != null) {
             renderBlockCount(mc, clutch);
         }
 
         // ─── Silent Aim Indicator ────────────────────────────────────────────
-        if (ClutchMod.SILENT_AIM != null
-            && ClutchMod.SILENT_AIM.isEnabled()
-            && ClutchMod.SILENT_AIM.isAimIndicator()
-            && ClutchMod.SILENT_AIM.hasOverride()) {
+        if (ModState.SILENT_AIM != null
+            && ModState.SILENT_AIM.isEnabled()
+            && ModState.SILENT_AIM.isAimIndicator()
+            && ModState.SILENT_AIM.hasOverride()) {
             renderAimIndicator(mc);
         }
 
         // ─── Delegated module overlays ──────────────────────────────────────
-        if (ClutchMod.PERSPECTIVE != null) ClutchMod.PERSPECTIVE.renderOverlay(mc, event.resolution, mc.fontRendererObj);
-        if (ClutchMod.PLAYER_ESP != null) ClutchMod.PLAYER_ESP.renderOverlay(mc, event.resolution, mc.fontRendererObj);
+        if (ModState.PERSPECTIVE != null) ModState.PERSPECTIVE.renderOverlay(mc, event.resolution, mc.fontRendererObj);
+        if (ModState.PLAYER_ESP != null) ModState.PLAYER_ESP.renderOverlay(mc, event.resolution, mc.fontRendererObj);
     }
 
     private void renderBlockCount(Minecraft mc, ClutchModule clutch) {
@@ -117,8 +117,8 @@ public class RenderHandler {
      *   Points with viewZ <= 0 are behind the camera or at the camera plane.
      */
     private void renderAimIndicator(Minecraft mc) {
-        float serverYaw   = ClutchMod.SILENT_AIM.getServerYaw();
-        float serverPitch = ClutchMod.SILENT_AIM.getServerPitch();
+        float serverYaw   = ModState.SILENT_AIM.getServerYaw();
+        float serverPitch = ModState.SILENT_AIM.getServerPitch();
 
         // Build aim target point 10 blocks along the aim vector
         double yawRad   = Math.toRadians(serverYaw);
@@ -223,9 +223,6 @@ public class RenderHandler {
         double fwdZ =  Math.cos(yawRad) * Math.cos(pitchRad);
 
         // Camera right vector = forward × world_up(0,1,0)
-        // cross(forward, up) = (forwardY*upZ - forwardZ*upY, forwardZ*upX - forwardX*upZ, forwardX*upY - forwardY*upX)
-        // up = (0,1,0): right = (forwardY*0 - forwardZ*1, forwardZ*0 - forwardX*0, forwardX*1 - forwardY*0)
-        //               = (-forwardZ, 0, forwardX)
         double rightX = -fwdZ;
         double rightY = 0.0;
         double rightZ = fwdX;

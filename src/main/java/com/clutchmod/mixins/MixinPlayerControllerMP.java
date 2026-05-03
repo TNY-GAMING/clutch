@@ -1,6 +1,7 @@
+// MixinPlayerControllerMP.java
 package com.clutchmod.mixins;
 
-import com.clutchmod.ClutchMod;
+import com.clutchmod.ModState;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.multiplayer.PlayerControllerMP;
 import net.minecraft.client.multiplayer.WorldClient;
@@ -18,7 +19,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class MixinPlayerControllerMP {
 
     @Inject(
-        method = "func_178890_a",  // onPlayerRightClick
+        method = "func_178890_a",
         at = @At("HEAD"),
         cancellable = true,
         remap = false
@@ -30,19 +31,13 @@ public abstract class MixinPlayerControllerMP {
             BlockPos pos,
             EnumFacing facing,
             Vec3 vec,
-            CallbackInfoReturnable<Boolean> cir) {
+            CallbackInfoReturnable cir) {
 
-        // BUG FIX: original code called canPlace() even when FastPlace was
-        // disabled, and cancelled the event when canPlace returned false.
-        // canPlace() already returns true when disabled, so this is safe now,
-        // but the guard below is explicit for clarity.
-        if (ClutchMod.FAST_PLACE == null || !ClutchMod.FAST_PLACE.isEnabled()) return;
-
-        // Only gate block placements (not entity interactions, food, etc.)
+        if (ModState.FAST_PLACE == null || !ModState.FAST_PLACE.isEnabled()) return;
         if (stack == null || !(stack.getItem() instanceof ItemBlock)) return;
 
-        if (!ClutchMod.FAST_PLACE.canPlace()) {
-            cir.setReturnValue(false); // Suppress this placement attempt
+        if (!ModState.FAST_PLACE.canPlace()) {
+            cir.setReturnValue(false);
         }
     }
 }

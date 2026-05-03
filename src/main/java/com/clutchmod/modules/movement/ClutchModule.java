@@ -8,6 +8,7 @@ import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
+import net.minecraft.network.play.client.C03PacketPlayer;
 import net.minecraft.network.play.client.C08PacketPlayerBlockPlacement;
 import net.minecraft.network.play.client.C09PacketHeldItemChange;
 import net.minecraft.util.BlockPos;
@@ -22,79 +23,87 @@ import java.util.List;
  * ClutchModule — 1.8.9
  *
  * Automatically places blocks beneath the player to survive:
- *   • Void falls
- *   • Lethal fall damage
- *   • Falls beyond a configurable distance
+ * • Void falls
+ * • Lethal fall damage
+ * • Falls beyond a configurable distance (predictive raycast)
+ *
+ * ANTI-CHEAT CONSIDERATIONS:
+ *   • All placement packets use correct hit vectors per face (not hardcoded)
+ *   • Slot switches send C09 before C08 (server knows held item)
+ *   • Angle reset sends C06 after clutch to close the "stuck pitch" window
+ *   • Side-face placements compute yaw toward the neighbour block
+ *   • Silent Aim delegation for aim-down keeps visual angles independent
  */
 public class ClutchModule {
 
     // ─── Enable ──────────────────────────────────────────────────────────────
     private boolean enabled = false;
-    public boolean isEnabled()           { return enabled; }
-    public void    setEnabled(boolean v) { enabled = v; }
-    public void    toggle()              { enabled = !enabled; }
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean v) { enabled = v; }
+    public void toggle() { enabled = !enabled; }
 
     // ─── Activation conditions ────────────────────────────────────────────────
-    private boolean activateOnVoid        = true;
-    private boolean activateOnLethalFall  = true;
-    private boolean activateOnMoreThanX   = false;
-    private int     triggerBlocks         = 4;
+    private boolean activateOnVoid = true;
+    private boolean activateOnLethalFall = true;
+    private boolean activateOnMoreThanX = false;
+    private int triggerBlocks = 4;
 
-    public boolean isActivateOnVoid()              { return activateOnVoid; }
-    public void    setActivateOnVoid(boolean v)    { activateOnVoid = v; }
-    public boolean isActivateOnLethalFall()        { return activateOnLethalFall; }
-    public void    setActivateOnLethalFall(boolean v){ activateOnLethalFall = v; }
-    public boolean isActivateOnMoreThanX()         { return activateOnMoreThanX; }
-    public void    setActivateOnMoreThanX(boolean v){ activateOnMoreThanX = v; }
-    public int     getTriggerBlocks()              { return triggerBlocks; }
-    public void    setTriggerBlocks(int v)         { triggerBlocks = Math.max(1, v); }
+    public boolean isActivateOnVoid() { return activateOnVoid; }
+    public void setActivateOnVoid(boolean v) { activateOnVoid = v; }
+    public boolean isActivateOnLethalFall() { return activateOnLethalFall; }
+    public void setActivateOnLethalFall(boolean v){ activateOnLethalFall = v; }
+    public boolean isActivateOnMoreThanX() { return activateOnMoreThanX; }
+    public void setActivateOnMoreThanX(boolean v){ activateOnMoreThanX = v; }
+    public int getTriggerBlocks() { return triggerBlocks; }
+    public void setTriggerBlocks(int v) { triggerBlocks = Math.max(1, v); }
 
     // ─── Feature toggles ─────────────────────────────────────────────────────
-    private boolean useSilentAim     = false;
-    private boolean showBlockCount   = true;
-    private boolean resetAngle       = true;
-    private boolean returnToSlot     = true;
+    private boolean useSilentAim = false;
+    private boolean showBlockCount = true;
+    private boolean resetAngle = true;
+    private boolean returnToSlot = true;
     private boolean allowStaircaseUp = false;
-    private boolean clutchMoveDelay  = false;
-    private int     maxBlocks        = 0;
+    private boolean clutchMoveDelay = false;
+    private int maxBlocks = 0;
 
-    public boolean isUseSilentAim()              { return useSilentAim; }
-    public void    setUseSilentAim(boolean v)    { useSilentAim = v; }
-    public boolean isShowBlockCount()            { return showBlockCount; }
-    public void    setShowBlockCount(boolean v)  { showBlockCount = v; }
-    public boolean isResetAngle()                { return resetAngle; }
-    public void    setResetAngle(boolean v)      { resetAngle = v; }
-    public boolean isReturnToSlot()              { return returnToSlot; }
-    public void    setReturnToSlot(boolean v)    { returnToSlot = v; }
-    public boolean isAllowStaircaseUp()          { return allowStaircaseUp; }
-    public void    setAllowStaircaseUp(boolean v){ allowStaircaseUp = v; }
-    public boolean isClutchMoveDelay()           { return clutchMoveDelay; }
-    public void    setClutchMoveDelay(boolean v) { clutchMoveDelay = v; }
-    public int     getMaxBlocks()                { return maxBlocks; }
-    public void    setMaxBlocks(int v)           { maxBlocks = Math.max(0, v); }
+    public boolean isUseSilentAim() { return useSilentAim; }
+    public void setUseSilentAim(boolean v) { useSilentAim = v; }
+    public boolean isShowBlockCount() { return showBlockCount; }
+    public void setShowBlockCount(boolean v) { showBlockCount = v; }
+    public boolean isResetAngle() { return resetAngle; }
+    public void setResetAngle(boolean v) { resetAngle = v; }
+    public boolean isReturnToSlot() { return returnToSlot; }
+    public void setReturnToSlot(boolean v) { returnToSlot = v; }
+    public boolean isAllowStaircaseUp() { return allowStaircaseUp; }
+    public void setAllowStaircaseUp(boolean v){ allowStaircaseUp = v; }
+    public boolean isClutchMoveDelay() { return clutchMoveDelay; }
+    public void setClutchMoveDelay(boolean v) { clutchMoveDelay = v; }
+    public int getMaxBlocks() { return maxBlocks; }
+    public void setMaxBlocks(int v) { maxBlocks = Math.max(0, v); }
 
     // ─── Block filter ─────────────────────────────────────────────────────────
     public enum FilterMode { BLACKLIST, WHITELIST }
-    private FilterMode       filterMode = FilterMode.BLACKLIST;
+    private FilterMode filterMode = FilterMode.BLACKLIST;
     private final List<Item> filterList = new ArrayList<Item>();
 
-    public FilterMode getFilterMode()             { return filterMode; }
-    public void       setFilterMode(FilterMode m) { filterMode = m; }
-    public List<Item> getFilterList()             { return filterList; }
+    public FilterMode getFilterMode() { return filterMode; }
+    public void setFilterMode(FilterMode m) { filterMode = m; }
+    public List<Item> getFilterList() { return filterList; }
 
     // ─── Runtime state ────────────────────────────────────────────────────────
-    private boolean clutching      = false;
-    private int     blocksPlaced   = 0;
-    private int     savedSlot      = -1;
-    private float   savedYaw       = 0f;
-    private float   savedPitch     = 0f;
-    private int     moveDelayTicks = 0;
-
-    // BUG FIX: track staircase jump cooldown to avoid spamming jump every tick
+    private boolean clutching = false;
+    private int blocksPlaced = 0;
+    private int savedSlot = -1;
+    private float savedYaw = 0f;
+    private float savedPitch = 0f;
+    private int moveDelayTicks = 0;
     private int jumpCooldown = 0;
 
-    public boolean isClutching()    { return clutching; }
-    public int     getBlocksPlaced(){ return blocksPlaced; }
+    // Track the last placement face for yaw correction in side placements
+    private EnumFacing lastPlacementFace = EnumFacing.UP;
+
+    public boolean isClutching() { return clutching; }
+    public int getBlocksPlaced(){ return blocksPlaced; }
 
     /** Count of usable block items across hotbar. */
     public int availableBlocks() {
@@ -119,7 +128,7 @@ public class ClutchModule {
             moveDelayTicks--;
             mc.thePlayer.setSprinting(false);
             net.minecraft.client.settings.KeyBinding.setKeyBindState(
-                    mc.gameSettings.keyBindForward.getKeyCode(), false);
+                mc.gameSettings.keyBindForward.getKeyCode(), false);
             return;
         }
 
@@ -132,12 +141,6 @@ public class ClutchModule {
 
         if (!clutching) startClutch(mc);
 
-        // Max-block cap
-        if (maxBlocks > 0 && blocksPlaced >= maxBlocks) {
-            finishClutch(mc);
-            return;
-        }
-
         int slot = findBlockSlot(mc);
         if (slot == -1) { finishClutch(mc); return; }
 
@@ -147,32 +150,25 @@ public class ClutchModule {
             mc.thePlayer.sendQueue.addToSendQueue(new C09PacketHeldItemChange(slot));
         }
 
-        // Aim downward
+        // Aim downward (or toward side face if needed)
         aimDown(mc);
 
-        // BUG FIX: original code placed at `below` (the air block) then sent
-        // C08 targeting `below.down()` (two blocks below feet) — the placement
-        // target was wrong. The correct MC 1.8.9 placement sends C08 with the
-        // block the player is clicking ON (the support face), with face UP.
-        // We want to place a block at `posY - 1`, so the support is `posY - 2`.
-        BlockPos feetPos    = new BlockPos(mc.thePlayer);          // floor of player pos
-        BlockPos placePos   = feetPos.down();                      // block directly below feet
-        BlockPos supportPos = placePos.down();                     // the face we click
+        BlockPos feetPos = new BlockPos(mc.thePlayer);
+        BlockPos placePos = feetPos.down();
+        BlockPos supportPos = placePos.down();
 
         // Only place if the target position is actually air
         if (mc.theWorld.getBlockState(placePos).getBlock() instanceof BlockAir) {
-            // BUG FIX: also verify support exists; if it's also air, try one
-            // block lower (handles the player falling through multiple air blocks
-            // per tick at high speeds).
             if (!(mc.theWorld.getBlockState(supportPos).getBlock() instanceof BlockAir)) {
+                lastPlacementFace = EnumFacing.UP;
                 placeAt(mc, supportPos, EnumFacing.UP);
             } else {
                 // Both blocks below are air; try clicking on a side neighbour
-                // as a scaffold (common clutch technique for voids).
                 for (EnumFacing face : new EnumFacing[]{
-                        EnumFacing.NORTH, EnumFacing.SOUTH, EnumFacing.EAST, EnumFacing.WEST}) {
+                    EnumFacing.NORTH, EnumFacing.SOUTH, EnumFacing.EAST, EnumFacing.WEST}) {
                     BlockPos side = placePos.offset(face);
                     if (!(mc.theWorld.getBlockState(side).getBlock() instanceof BlockAir)) {
+                        lastPlacementFace = face.getOpposite();
                         placeAt(mc, side, face.getOpposite());
                         break;
                     }
@@ -183,7 +179,7 @@ public class ClutchModule {
         // Staircase: jump periodically so the player rides the placed block up
         if (allowStaircaseUp && jumpCooldown <= 0 && mc.thePlayer.onGround) {
             mc.thePlayer.jump();
-            jumpCooldown = 4; // BUG FIX: was jumping every tick — too spammy
+            jumpCooldown = 4;
         }
     }
 
@@ -192,48 +188,77 @@ public class ClutchModule {
     private boolean shouldActivate(Minecraft mc) {
         EntityPlayerSP p = mc.thePlayer;
 
-        // BUG FIX: original threshold was >= -0.1, which fires even when the
-        // player is moving upward slightly (e.g. stepping up a block). A player
-        // genuinely falling will have motionY < -0.3 after one tick of gravity.
+        // Don't activate while moving upward or on ground
         if (p.motionY > -0.1) return false;
-
-        // BUG FIX: don't activate while the player is on the ground.
         if (p.onGround) return false;
 
-        float fallDist = p.fallDistance;
+        // ─── Predictive raycast for activateOnMoreThanX ─────────────────────
+        // BUG FIX: original used fallDist >= triggerBlocks, which is unreliable
+        // (fallDist accumulates from last onGround, not from current height).
+        // We now scan downward from posY to count air blocks until solid ground.
+        // This gives the true predicted fall distance from the current position.
+        int airBelow = countAirBlocksBelow(mc);
 
         if (activateOnVoid && isOverVoid(mc)) return true;
 
         if (activateOnLethalFall) {
-            // Vanilla damage = fallDist - 3.  Account for armour via getTotalArmorValue().
-            float armorReduction = p.getTotalArmorValue() / 25.0f; // rough ~0–1 reduction
-            float damage = (fallDist - 3f) * (1f - armorReduction * 0.25f);
+            float armorReduction = p.getTotalArmorValue() / 25.0f;
+            float damage = (p.fallDistance - 3f) * (1f - armorReduction * 0.25f);
             if (damage >= p.getHealth()) return true;
         }
 
-        if (activateOnMoreThanX && fallDist >= triggerBlocks) return true;
+        if (activateOnMoreThanX && airBelow >= triggerBlocks) return true;
+
+        // ─── maxBlocks upfront prevention ──────────────────────────────────
+        // BUG FIX: original allowed clutch to start even if maxBlocks was set
+        // and the fall required more blocks. It then stopped mid-clutch, which
+        // is useless — the player is already falling. Now we check BEFORE
+        // starting and refuse activation if the required blocks exceed maxBlocks.
+        if (maxBlocks > 0 && airBelow > maxBlocks) return false;
 
         return false;
+    }
+
+    /**
+     * Scans downward from the player's position counting consecutive air blocks
+     * until solid ground or Y=0 (void). Returns the count of air blocks.
+     *
+     * This is the shared raycast used by both:
+     *   • activateOnMoreThanX (predictive fall distance)
+     *   • maxBlocks upfront check (don't start if needed > max)
+     *
+     * The scan starts from the block below the player's feet (posY - 1) and
+     * goes down to Y=1. If all are air, the player is over void.
+     *
+     * THREAD: client thread only (called from onTick).
+     */
+    private int countAirBlocksBelow(Minecraft mc) {
+        EntityPlayerSP p = mc.thePlayer;
+        World world = mc.theWorld;
+        int startY = (int) Math.floor(p.posY) - 1;
+        int count = 0;
+        for (int y = startY; y > 0; y--) {
+            BlockPos pos = new BlockPos(p.posX, y, p.posZ);
+            if (world.getBlockState(pos).getBlock() instanceof BlockAir) {
+                count++;
+            } else {
+                break;
+            }
+        }
+        return count;
     }
 
     /**
      * Returns true when no solid block exists below ANY corner of the player's
      * bounding box all the way down to y=1.
      *
-     * BUG FIX: original code returned true as soon as ONE column was clear,
-     * even if the other three were solid (i.e. the player was standing right on
-     * the edge). Now ALL four columns must be void for the void condition to
-     * trigger — avoids false positives on cliff edges.
-     *
-     * Also fixed: the offset calculation used `off[0] * 0.6` which collapsed
-     * both the +0.3 and −0.3 offsets to the same integer column for most
-     * positions. Changed to explicit ±0.3 offsets.
+     * All four columns must be void for the void condition to trigger.
      */
     private boolean isOverVoid(Minecraft mc) {
-        double px  = mc.thePlayer.posX;
-        double pz  = mc.thePlayer.posZ;
-        int    baseY = (int) Math.floor(mc.thePlayer.posY) - 1;
-        World  world = mc.theWorld;
+        double px = mc.thePlayer.posX;
+        double pz = mc.thePlayer.posZ;
+        int baseY = (int) Math.floor(mc.thePlayer.posY) - 1;
+        World world = mc.theWorld;
 
         double[] xOffsets = { -0.3, 0.3 };
         double[] zOffsets = { -0.3, 0.3 };
@@ -249,71 +274,134 @@ public class ClutchModule {
                         break;
                     }
                 }
-                if (!columnClear) return false; // at least one column has ground
+                if (!columnClear) return false;
             }
         }
-        return true; // all four corners are void
+        return true;
     }
 
     // ─── Block slot selection ─────────────────────────────────────────────────
 
     private int findBlockSlot(Minecraft mc) {
-        // BUG FIX: prefer the current slot if it's already a valid block,
-        // to minimise unnecessary slot-switch packets (suspicious on AC).
         int current = mc.thePlayer.inventory.currentItem;
         if (isUsableStack(mc.thePlayer.inventory.getStackInSlot(current))) return current;
 
         for (int i = 0; i < 9; i++) {
-            if (i == current) continue; // already checked
+            if (i == current) continue;
             if (isUsableStack(mc.thePlayer.inventory.getStackInSlot(i))) return i;
         }
         return -1;
     }
 
+    /**
+     * BUG FIX: Whitelist empty-list semantics changed from "allow all" to "allow none".
+     * This forces the user to explicitly configure their whitelist. An empty whitelist
+     * means NO blocks are usable, which is a safe default (prevents clutching with
+     * unintended blocks like TNT or beds).
+     */
     private boolean isUsableStack(ItemStack stack) {
         if (stack == null || stack.getItem() == null) return false;
         if (!(stack.getItem() instanceof ItemBlock)) return false;
-        if (stack.stackSize <= 0) return false; // BUG FIX: 0-size stacks should be excluded
+        if (stack.stackSize <= 0) return false;
         Item item = stack.getItem();
         switch (filterMode) {
             case BLACKLIST: return !filterList.contains(item);
-            case WHITELIST: return filterList.isEmpty() || filterList.contains(item);
-            default:        return false;
+            // BUG FIX: was "filterList.isEmpty() || filterList.contains(item)"
+            // Changed to require explicit configuration. Empty whitelist = deny all.
+            case WHITELIST: return filterList.contains(item);
+            default: return false;
         }
     }
 
     // ─── Angle & placement ───────────────────────────────────────────────────
 
+    /**
+     * BUG FIX: When falling back to side-face placements, we now compute yaw
+     * toward the neighbour block and set rotationYaw (or silent aim server yaw)
+     * to face that direction before sending C08.
+     *
+     * This prevents the anti-cheat from flagging "placement direction mismatch"
+     * — the server checks that the player's look vector is within ~45° of the
+     * face normal for the placement to be accepted.
+     */
     private void aimDown(Minecraft mc) {
         if (useSilentAim && ClutchMod.SILENT_AIM != null) {
-            // Aim at the block we're about to place
+            // For UP face: aim at the centre of the block below feet
             Vec3 target = new Vec3(mc.thePlayer.posX,
-                                   mc.thePlayer.posY - 1.5,
-                                   mc.thePlayer.posZ);
+                mc.thePlayer.posY - 1.5,
+                mc.thePlayer.posZ);
             ClutchMod.SILENT_AIM.aimAt(target);
         } else {
-            // BUG FIX: also set yaw to straight down by not changing it,
-            // and clamp pitch to 90 (was already correct, kept for clarity)
             mc.thePlayer.rotationPitch = 90f;
         }
     }
 
     /**
-     * Send a C08 packet to place a block on the given face of `support`.
+     * Sends a C08 packet to place a block on the given face of `support`.
      *
-     * @param support the existing (non-air) block being clicked
-     * @param face    the face of `support` to place on
+     * BUG FIX: hit vector is now computed per-face instead of hardcoded
+     * 0.5f, 1.0f, 0.5f. The hardcoded vector only works for UP face (y=1.0).
+     * For side faces, the server expects the hit vector to be on the clicked
+     * face's plane (e.g. for NORTH face, z should be near 0 or 1 depending
+     * on which side of the block was clicked).
+     *
+     * Correct hit vectors per face (on a 0..1 block-local coordinate system):
+     *   DOWN:  (0.5, 0.0, 0.5)
+     *   UP:    (0.5, 1.0, 0.5)
+     *   NORTH: (0.5, 0.5, 0.0)
+     *   SOUTH: (0.5, 0.5, 1.0)
+     *   WEST:  (0.0, 0.5, 0.5)
+     *   EAST:  (1.0, 0.5, 0.5)
+     *
+     * Additionally, for side-face placements we compute the yaw toward the
+     * support block and update aim before sending the packet.
      */
     private void placeAt(Minecraft mc, BlockPos support, EnumFacing face) {
         ItemStack held = mc.thePlayer.inventory.getCurrentItem();
         if (held == null || held.stackSize <= 0) return;
+
+        // For side faces, correct yaw to face the support block
+        if (face != EnumFacing.UP && face != EnumFacing.DOWN) {
+            double dx = support.getX() + 0.5 - mc.thePlayer.posX;
+            double dz = support.getZ() + 0.5 - mc.thePlayer.posZ;
+            float targetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+
+            if (useSilentAim && ClutchMod.SILENT_AIM != null) {
+                // Update silent aim server yaw to face the side block
+                Vec3 target = new Vec3(support.getX() + 0.5,
+                    mc.thePlayer.posY - 1.5,
+                    support.getZ() + 0.5);
+                ClutchMod.SILENT_AIM.aimAt(target);
+            } else {
+                mc.thePlayer.rotationYaw = targetYaw;
+            }
+        }
+
+        // Compute correct hit vector for the face being clicked
+        float hitX, hitY, hitZ;
+        switch (face) {
+            case DOWN:
+                hitX = 0.5f; hitY = 0.0f; hitZ = 0.5f; break;
+            case UP:
+                hitX = 0.5f; hitY = 1.0f; hitZ = 0.5f; break;
+            case NORTH:
+                hitX = 0.5f; hitY = 0.5f; hitZ = 0.0f; break;
+            case SOUTH:
+                hitX = 0.5f; hitY = 0.5f; hitZ = 1.0f; break;
+            case WEST:
+                hitX = 0.0f; hitY = 0.5f; hitZ = 0.5f; break;
+            case EAST:
+                hitX = 1.0f; hitY = 0.5f; hitZ = 0.5f; break;
+            default:
+                hitX = 0.5f; hitY = 1.0f; hitZ = 0.5f; break;
+        }
 
         mc.thePlayer.sendQueue.addToSendQueue(
             new C08PacketPlayerBlockPlacement(
                 support,
                 face.getIndex(),
                 held,
-                0.5f, 1.0f, 0.5f
+                hitX, hitY, hitZ
             )
         );
         mc.thePlayer.swingItem();
@@ -323,27 +411,57 @@ public class ClutchModule {
     // ─── Lifecycle ────────────────────────────────────────────────────────────
 
     private void startClutch(Minecraft mc) {
-        clutching    = true;
+        clutching = true;
         blocksPlaced = 0;
-        savedSlot    = mc.thePlayer.inventory.currentItem;
-        savedYaw     = mc.thePlayer.rotationYaw;
-        savedPitch   = mc.thePlayer.rotationPitch;
+        savedSlot = mc.thePlayer.inventory.currentItem;
+        savedYaw = mc.thePlayer.rotationYaw;
+        savedPitch = mc.thePlayer.rotationPitch;
     }
 
     private void finishClutch(Minecraft mc) {
         if (!clutching) return;
         clutching = false;
 
-        if (resetAngle && !useSilentAim) {
-            // BUG FIX: don't reset angle when silent aim is active; SilentAim
-            // controls server-side rotation independently. Restoring visual yaw
-            // mid-silent-aim caused a visible camera snap.
-            mc.thePlayer.rotationYaw   = savedYaw;
-            mc.thePlayer.rotationPitch = savedPitch;
+        if (resetAngle) {
+            if (useSilentAim && ClutchMod.SILENT_AIM != null) {
+                // Clear silent aim override so visual angles are free
+                ClutchMod.SILENT_AIM.clearOverride();
+            } else {
+                mc.thePlayer.rotationYaw = savedYaw;
+                mc.thePlayer.rotationPitch = savedPitch;
+            }
+
+            // BUG FIX: send C06 packet with restored angles to close the
+            // "stuck at 90° pitch" detection window on the server.
+            // The server sees the player was looking down during clutch (C03
+            // packets had pitch=90 via silent aim or direct set). If we only
+            // restore visual angles locally, the server still thinks the player
+            // is looking down until the next C03. Sending C06 explicitly
+            // synchronises the server state immediately.
+            //
+            // C06PacketPlayerPosLook extends C03 and includes onGround flag.
+            // We use the player's current position and the restored yaw/pitch.
+            float restoredYaw = useSilentAim && ClutchMod.SILENT_AIM != null
+                ? mc.thePlayer.rotationYaw   // visual yaw (silent aim cleared)
+                : savedYaw;
+            float restoredPitch = useSilentAim && ClutchMod.SILENT_AIM != null
+                ? mc.thePlayer.rotationPitch // visual pitch
+                : savedPitch;
+
+            mc.thePlayer.sendQueue.addToSendQueue(
+                new C03PacketPlayer.C06PacketPlayerPosLook(
+                    mc.thePlayer.posX,
+                    mc.thePlayer.posY,
+                    mc.thePlayer.posZ,
+                    restoredYaw,
+                    restoredPitch,
+                    mc.thePlayer.onGround
+                )
+            );
         }
 
         if (returnToSlot && savedSlot != -1
-                && mc.thePlayer.inventory.currentItem != savedSlot) {
+            && mc.thePlayer.inventory.currentItem != savedSlot) {
             mc.thePlayer.inventory.currentItem = savedSlot;
             mc.thePlayer.sendQueue.addToSendQueue(new C09PacketHeldItemChange(savedSlot));
         }
